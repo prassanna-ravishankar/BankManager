@@ -90,6 +90,11 @@ class BankAccountID(object):
                self._accountid[12:16] + "-" + self._accountid[16:]
 
 
+# Creating a custom Exception so we don't mix it with primitive exceptions
+class BankException(Exception):
+    pass
+
+
 if __name__ == "__main__":
     # Sandbox
     working_id = BankCode("BB01")
@@ -106,4 +111,5 @@ if __name__ == "__main__":
     # nonworking_zone = BankZone("UTC")
 
     working_account = BankAccountID("BB021234-5678-9012-3456-789012345678")
-    print (working_account)
+    print(working_account)
+

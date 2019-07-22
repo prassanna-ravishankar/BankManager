@@ -1,15 +1,17 @@
-from currencies import Currency
 from basebank import BankAccountID
+
 
 # Basically a wallet (can easily be blockchainified)
 class BankAccount(object):
-    def __init__(self, account_id, currency="USD"):
+    def __init__(self, account_id, currency=None):
         assert account_id is not None # Or generate new account number
         self._id = BankAccountID(account_id)
         self._currencies = []
         self._default_currency = None
         self._last_calculated_balance = None
         self._bankid = self._id.bankid
+        if currency is not None:
+            self.add_currency(currency)
 
     def check_balance(self):
         """
@@ -26,6 +28,11 @@ class BankAccount(object):
     def add_currency(self, new_currency_str=None):
         self._currencies.append(new_currency_str)
 
+        # If its the first currency,
+        # make it default
+        if len(self._currencies) == 1:
+            self._default_currency = new_currency_str
+
 
     def generate_new_account(self, bankid=""):
         """
@@ -39,4 +46,3 @@ class BankAccount(object):
             Genereates a new account, with a given bank.
         """
         pass
-
