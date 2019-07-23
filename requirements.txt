@@ -3,3 +3,5 @@ python-dateutil # to get ISO 8601 timezone
 ccy # iso-4217 error code
 faker # To make fake data
 rstr # Fake string data
+pytz # Timzeones
+money

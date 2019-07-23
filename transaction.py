@@ -1,8 +1,10 @@
 import re
 import dateutil.parser
-import ccy
+from itertools import groupby
+from iso4217 import Currency
 import logging
 from basebank import BankException, BankAccountID
+from forex_python.converter import CurrencyRates
 
 logger = logging.getLogger(__name__)
 
@@ -39,16 +41,16 @@ class Transaction(object):
         category : str,
             Some human readable note to attach to the transfer
         """
-        assert amount >= 0, "Cannot transfer negative amounts. " \
-                            "Stop gaming the system!"
+        assert float(amount) >= 0, "Cannot transfer negative amounts. "\
+                                   "Stop gaming the system!"
 
         self._date = dateutil.parser.parse(date)
         self._source = BankAccountID(source)
         self._destination = BankAccountID(destination)
-        self._amount = amount
+        self._amount = float(amount)
         self._id = transaction_id
 
-        currency_obj = ccy.currency(currency)
+        currency_obj = Currency(currency)
         if currency_obj is not None:
             self._currency = currency_obj
         else:
@@ -96,6 +98,9 @@ class Transaction(object):
         return (self._destination.bankid == reference_bank_code) or \
                (self._source.bankid == reference_bank_code)
 
+    @property
+    def currency_code(self):
+        return self._currency.code
 
 
 class TransactionList(object):
@@ -112,12 +117,43 @@ class TransactionList(object):
         """
         self._transactions = []
         self._bank = bank
+        self._currencies = []
+        self._base_currency = None
+        self._amount = None
 
     def add_transaction(self, *args, **kwargs):
         """
         Constructs a Transaction instance and pushes it
         Refer to Transaction.__init__(...) for parameters
         """
+        my_transaction = Transaction(*args, **kwargs)
         self._transactions.append(
-            Transaction(*args, **kwargs)
+            my_transaction
         )
+        self._currencies.append(my_transaction.currency_code)
+
+    def currencies(self):
+        return {key: len(list(group)) for key, group in groupby(self._currencies)}
+
+    def calculate_balance(self):
+        """
+        TODO : HANDLE CURRENCY
+        """
+        self._amount = 0
+        for tx in self._transactions:
+            if tx.internal:
+                continue
+            elif tx.is_outgoing:
+                self._amount -= tx.amount
+            elif tx.is_incoming:
+                self._amount += tx.amount
+
+    @property
+    def balance(self):
+        if self._amount is None:
+            self.calculate_balance()
+        return self._amount
+
+    @property
+    def bank(self):
+        return self._bank
