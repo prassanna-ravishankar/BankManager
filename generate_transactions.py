@@ -9,7 +9,13 @@ import datetime
 from iso4217 import Currency
 from money import xrates
 from decimal import Decimal
+
+from transaction import Transaction
+
+# Ecchange rate faker
+xrates.install('money.exchange.SimpleBackend')
 xrates.base = 'USD'  # All base currencyis in USD.
+
 
 # TODO: Make the provider bank specific. Got to have the same bank id either
 #       in the destination or the source.
@@ -53,7 +59,7 @@ class TransactionProvider(BaseProvider):
         general_rule = r'^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-' \
                        r'[0-9A-F]{4}-[0-9A-F]{12}$'
         my_bank_rule = r'^[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-' \
-                        r'[0-9A-F]{4}-[0-9A-F]{12}$'
+                       r'[0-9A-F]{4}-[0-9A-F]{12}$'
         if incoming:
             dest_id = bankid + xeger(my_bank_rule)
         else:
@@ -67,11 +73,11 @@ class TransactionProvider(BaseProvider):
         transaction_id = xeger(general_rule)
         return transaction_id, source_id, dest_id
 
-    def transaction(self, bankid, date=None):
+    def transaction(self, bankid, date=None, pending_transactions={}):
         date, amount, currency, category = self._gen_agnostic_data(date=date)
 
         # Randomly choose the type of the transaction
-        transaction_id, source_id, dest_id =\
+        transaction_id, source_id, dest_id = \
             random.choice(
                 [
                     # Internal Transaction
@@ -86,13 +92,21 @@ class TransactionProvider(BaseProvider):
                 ]
             )
 
-        return date, transaction_id, source_id,\
-               dest_id, amount, currency, category
+        transaction_instance = Transaction(
+            date, source_id, dest_id, transaction_id,
+            amount, currency, category
+        )
+        other_bank_id = None
+        if not transaction_instance.internal:
+            other_bank_id = transaction_instance.other_bank(bankid)
+
+        return date, transaction_id, source_id, \
+               dest_id, amount, currency, category, other_bank_id
 
     @staticmethod
     def random_transaction(self):
         rule_gen_id = r'^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-' \
-                            r'[0-9A-F]{4}-[0-9A-F]{12}$'
+                      r'[0-9A-F]{4}-[0-9A-F]{12}$'
         transaction_id = xeger(rule_gen_id)
         source_id = xeger(rule_gen_id)
         dest_id = xeger(rule_gen_id)
@@ -108,7 +122,8 @@ def generate_multiple_transactions(nr_entries):
             for n in range(0, nr_entries)], bid
 
 
-def fake_bank_transactions(bank_id=None, filename=None, date=None, logsize=10):
+def fake_bank_transactions(bank_id=None, filename=None, date=None, logsize=10,
+                           pending_transactions={}):
     transaction_faker = Faker()
     transaction_faker.add_provider(TransactionProvider)
     if date is None:
@@ -121,7 +136,28 @@ def fake_bank_transactions(bank_id=None, filename=None, date=None, logsize=10):
     with open(filename, 'w') as f:
         writer = csv.writer(f)
         for n in range(0, logsize):
-            writer.writerow(transaction_faker.transaction(bank_id, date))
+            date, transaction_id, source_id, dest_id, amount, currency, \
+            category, other_bank_id = \
+                transaction_faker.transaction(bank_id, date)
+            if other_bank_id:
+                pending_transactions[other_bank_id].append((date, transaction_id,
+                                                      source_id, dest_id,
+                                                      amount, currency,
+                                                      category))
+            writer.writerow((date, transaction_id, source_id,
+                            dest_id, amount, currency, category))
+
+
+def write_pending_transactions(filename, pending_bank_transactions):
+    transaction_faker = Faker()
+    transaction_faker.add_provider(TransactionProvider)
+    with open(filename, 'w') as f:
+        writer = csv.writer(f)
+        for pending_transaction in pending_bank_transactions:
+            date, transaction_id, source_id, dest_id, amount, currency, \
+            category = pending_transaction
+            writer.writerow((date, transaction_id, source_id,
+                            dest_id, amount, currency, category))
 
 
 def fake_multibank_transactions(nr_banks=10, entries_per_bank=10,
@@ -132,18 +168,27 @@ def fake_multibank_transactions(nr_banks=10, entries_per_bank=10,
     transaction_faker.add_provider(TransactionProvider)
     with open(os.path.join(output_folder, "transactions.csv"), "w") as f:
         writer = csv.writer(f)
-        for bank_idx in range(0, nr_banks):
-            bank_code = transaction_faker.bank_id()
-            timezone = transaction_faker.timezone()
-            bank_name = transaction_faker.bank_name()
+        bank_data = [(
+            transaction_faker.bank_id(),
+            transaction_faker.timezone(),
+            transaction_faker.bank_name()
+        )
+            for bankidx in range(nr_banks)]
+        pending_transactions = {bankid:[] for bankid, tz, bname in bank_data}
+        for bank_code, timezone, bank_name in bank_data:
+            # bank_code = transaction_faker.bank_id()
+            # timezone = transaction_faker.timezone()
+            # bank_name = transaction_faker.bank_name()
             for entry_idx in range(entries_per_bank):
                 date = transaction_faker.date_str()
                 filename_local = bank_code + '_' + \
-                                 '{0:04.0f}'.format(entry_idx)+".csv"
+                                 '{0:04.0f}'.format(entry_idx) + ".csv"
                 filename = os.path.join(
                     output_folder,
                     filename_local
                 )
+                fake_bank_transactions(bank_code, filename, date,
+                                       pending_transactions=pending_transactions)
                 writer.writerow(
                     [
                         date,
@@ -153,12 +198,34 @@ def fake_multibank_transactions(nr_banks=10, entries_per_bank=10,
                         bank_name
                     ]
                 )
-                fake_bank_transactions(bank_code, filename, date)
+
+        # Fill up the pending transactions
+        for bank_code, timezone, bank_name in bank_data:
+            date = transaction_faker.date_str()
+            filename_local = str(bank_code) + "_pending.csv"
+            bank_name = None
+
+            filename = os.path.join(
+                output_folder,
+                filename_local
+            )
+            write_pending_transactions(filename, pending_transactions[bank_code])
+            writer.writerow(
+                [
+                    date,
+                    bank_code,
+                    timezone,
+                    filename_local,
+                    bank_name
+                ]
+            )
+            pass
     pass
 
 
 if __name__ == "__main__":
     import time
+
     start = time.time()
     fake_multibank_transactions(output_folder="transactions/")
     duration = (time.time() - start)

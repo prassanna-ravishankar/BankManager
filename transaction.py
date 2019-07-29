@@ -98,6 +98,14 @@ class Transaction(object):
         return (self._destination.bankid == reference_bank_code) or \
                (self._source.bankid == reference_bank_code)
 
+    def other_bank(self, bankid):
+        assert not self.internal, \
+            "This function is only called on external transactions"
+        if self._source.bankid == bankid:
+            return self._destination.bankid
+        if self._destination.bankid == bankid:
+            return self._source.bankid
+
     @property
     def currency_code(self):
         return self._currency.code
