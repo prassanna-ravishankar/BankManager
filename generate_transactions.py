@@ -7,18 +7,13 @@ import os
 import pytz
 import datetime
 from iso4217 import Currency
-from money import xrates
 from decimal import Decimal
-
+import json
 from transaction import Transaction
 
-# Ecchange rate faker
-xrates.install('money.exchange.SimpleBackend')
-xrates.base = 'USD'  # All base currencyis in USD.
-
-
-# TODO: Make the provider bank specific. Got to have the same bank id either
-#       in the destination or the source.
+# Store currencies in this dict
+# TODO : or not, currently not handling changing currency rates with time
+global_currency_rates = {}
 
 
 class TransactionProvider(BaseProvider):
@@ -50,7 +45,13 @@ class TransactionProvider(BaseProvider):
         category = self._internal_faker.name().split(' ')[0]
 
         # Before we go, lets set the rate of that currency
-        xrates.setrate(currency, Decimal(random.randint(0, 100)))
+        # if its previously set, do not reset it
+        if currency not in global_currency_rates:
+            if currency is "USD":
+                currency_rate = 1
+            else:
+                currency_rate = Decimal(random.randint(0, 100))
+                global_currency_rates[currency] = str(currency_rate)
 
         return date, amount, currency, category
 
@@ -220,13 +221,17 @@ def fake_multibank_transactions(nr_banks=10, entries_per_bank=10,
                 ]
             )
             pass
+    # By this time a unique set of currency rates will be generated.
+    json.dump(global_currency_rates,
+              open(os.path.join(output_folder, "currency_rates.json"), "w")
+              )
     pass
 
 
 if __name__ == "__main__":
     import time
-
     start = time.time()
     fake_multibank_transactions(output_folder="transactions/")
     duration = (time.time() - start)
-    print("CSV: ", duration)
+    print("Duration: ", duration)
+

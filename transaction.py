@@ -4,7 +4,6 @@ from itertools import groupby
 from iso4217 import Currency
 import logging
 from basebank import BankException, BankAccountID
-from forex_python.converter import CurrencyRates
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +109,10 @@ class Transaction(object):
     def currency_code(self):
         return self._currency.code
 
+    @property
+    def category(self):
+        return self._category
+
 
 class TransactionList(object):
     """
@@ -124,6 +127,7 @@ class TransactionList(object):
             Each transaction list is unique to a bank.
         """
         self._transactions = []
+        self._transaction_categories = []
         self._bank = bank
         self._currencies = []
         self._base_currency = None
@@ -139,6 +143,8 @@ class TransactionList(object):
             my_transaction
         )
         self._currencies.append(my_transaction.currency_code)
+        if my_transaction.category not in self._transaction_categories:
+            self._transaction_categories.append(my_transaction.category)
 
     def currencies(self):
         return {key: len(list(group)) for key, group in groupby(self._currencies)}
@@ -165,3 +171,13 @@ class TransactionList(object):
     @property
     def bank(self):
         return self._bank
+
+    def categorize(self):
+        categorized_transactions = {cat:[] for cat in
+                                    self._transaction_categories}
+        for category in self._transaction_categories:
+            for curr_transaction in self._transactions:
+                if category == curr_transaction.category:
+                    categorized_transactions[category].append(curr_transaction)
+
+        return categorized_transactions

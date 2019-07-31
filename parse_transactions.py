@@ -1,8 +1,22 @@
 import argparse
 import csv
+import json
 import os
 from bank import Bank
 from transaction import TransactionList
+from money import xrates
+
+# Exchange rate faker
+xrates.install('money.exchange.SimpleBackend')
+xrates.base = 'USD'  # All base currency is in USD.
+
+
+def parse_currency_file(folder_data):
+    # Load currency exchange before anything else
+    currency_rates = json.load(open(os.path.join(folder_data,
+                                                 "currency_rates.json"), "r"))
+    for currency, currency_rate in currency_rates.items():
+        xrates.setrate(currency, currency_rate)
 
 
 def parse_log_file(filename, bank_transaction_list):
@@ -40,6 +54,12 @@ def parse_transaction_file(folder_transaction):
     return transaction_lists
 
 
+def categorize_transactions_for_bank(bankid, all_transactions):
+    assert bankid in all_transactions, "Didn't parse transactions for this bank"
+    my_categorized_transaction = all_transactions[bankid].categorize()
+    return my_categorized_transaction
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-t", "--transaction_folder", type=str,
@@ -49,6 +69,12 @@ if __name__ == "__main__":
                         default="./results",
                         help="What is the results folder")
     args = parser.parse_args()
+    parse_currency_file(os.path.abspath(args.transaction_folder))
     all_transaction_lists = \
         parse_transaction_file(os.path.abspath(args.transaction_folder))
+    categorized_bank_transactions = categorize_transactions_for_bank(
+        list(all_transaction_lists.keys())[0],
+        all_transaction_lists
+    )
+    print (categorized_bank_transactions)
     pass

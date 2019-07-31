@@ -4,4 +4,6 @@ ccy # iso-4217 error code
 faker # To make fake data
 rstr # Fake string data
 pytz # Timzeones
-money
+money #
+iso4217 # Currency
+tqdm # super cool progress bar, why not
