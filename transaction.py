@@ -4,6 +4,7 @@ from itertools import groupby
 from iso4217 import Currency
 import logging
 from basebank import BankException, BankAccountID
+import config
 
 logger = logging.getLogger(__name__)
 
@@ -73,13 +74,13 @@ class Transaction(object):
         if self.internal:
             return False
         else:
-            return reference_bank_code == self._source.bankid
+            return reference_bank_code.bankid == self._source.bankid.bankid
 
     def is_incoming(self, reference_bank_code):
         if self.internal:
             return False
         else:
-            return reference_bank_code == self._destination.bankid
+            return reference_bank_code.bankid == self._destination.bankid.bankid
 
     def concerns_bank(self, reference_bank_code):
         """
@@ -100,10 +101,10 @@ class Transaction(object):
     def other_bank(self, bankid):
         assert not self.internal, \
             "This function is only called on external transactions"
-        if self._source.bankid == bankid:
-            return self._destination.bankid
-        if self._destination.bankid == bankid:
-            return self._source.bankid
+        if self._source.bankid.bankid == bankid:
+            return self._destination.bankid.bankid
+        if self._destination.bankid.bankid == bankid:
+            return self._source.bankid.bankid
 
     @property
     def currency_code(self):
@@ -112,6 +113,14 @@ class Transaction(object):
     @property
     def category(self):
         return self._category
+
+    @property
+    def transaction_time(self):
+        return self._date.isoformat()
+
+    @property
+    def transaction_amount_nocurrency(self):
+        return self._amount
 
 
 class TransactionList(object):
@@ -149,18 +158,31 @@ class TransactionList(object):
     def currencies(self):
         return {key: len(list(group)) for key, group in groupby(self._currencies)}
 
-    def calculate_balance(self):
+    def calculate_balance(self, currency_rates):
         """
-        TODO : HANDLE CURRENCY
+        Calculates balance in the base currency
         """
         self._amount = 0
         for tx in self._transactions:
+            if tx.currency_code is config.BASE_CURRENCY:
+                rate = 1
+            else:
+                rate = currency_rates.currency_rate_at_date(
+                    tx.currency_code,
+                    tx.transaction_time
+                )
+            assert rate is not None, "We are parsing a currency, " \
+                                     "whose rate is not defined at that time."
             if tx.internal:
                 continue
-            elif tx.is_outgoing:
-                self._amount -= tx.amount
-            elif tx.is_incoming:
-                self._amount += tx.amount
+            elif tx.is_outgoing(self.bank.code):
+                self._amount -= tx.transaction_amount_nocurrency * rate
+            elif tx.is_incoming(self.bank.code):
+                self._amount += tx.transaction_amount_nocurrency * rate
+            else:
+                assert 1==0, "Every transaction has to be internal " \
+                             "or incoming or outgoing"
+        return self._amount
 
     @property
     def balance(self):

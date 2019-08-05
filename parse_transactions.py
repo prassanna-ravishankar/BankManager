@@ -4,19 +4,7 @@ import json
 import os
 from bank import Bank
 from transaction import TransactionList
-from money import xrates
-
-# Exchange rate faker
-xrates.install('money.exchange.SimpleBackend')
-xrates.base = 'USD'  # All base currency is in USD.
-
-
-def parse_currency_file(folder_data):
-    # Load currency exchange before anything else
-    currency_rates = json.load(open(os.path.join(folder_data,
-                                                 "currency_rates.json"), "r"))
-    for currency, currency_rate in currency_rates.items():
-        xrates.setrate(currency, currency_rate)
+from currencyrates import CurrencyRateList
 
 
 def parse_log_file(filename, bank_transaction_list):
@@ -68,10 +56,25 @@ if __name__ == "__main__":
     parser.add_argument("-r", "--result_folder", type=str,
                         default="./results",
                         help="What is the results folder")
+    parser.add_argument("-c", "--currency_rates", type=str,
+                        default=None,
+                        help="The name of the currency rates file")
     args = parser.parse_args()
-    parse_currency_file(os.path.abspath(args.transaction_folder))
+
+    if not args.currency_rates:
+        filename_currency = os.path.join(
+            os.path.abspath(args.transaction_folder),
+            "currency_rates.json"
+        )
+    else:
+        filename_currency = args.currency_rates
+    currency_list = CurrencyRateList.load(
+        filename_currency
+    )
     all_transaction_lists = \
         parse_transaction_file(os.path.abspath(args.transaction_folder))
+
+    print ( "Random bank balance : ", all_transaction_lists[list(all_transaction_lists.keys())[9]].calculate_balance(currency_list))
     categorized_bank_transactions = categorize_transactions_for_bank(
         list(all_transaction_lists.keys())[0],
         all_transaction_lists

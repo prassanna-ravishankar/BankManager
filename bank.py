@@ -19,3 +19,7 @@ class Bank(object):
         self._code = BankCode(code)
         self._timezone = BankZone(timezone)
         self._name = name
+
+    @property
+    def code(self):
+        return self._code

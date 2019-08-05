@@ -1,5 +1,5 @@
 pytest # for testing
-python-dateutil # to get ISO 8601 timezone
+python-dateutil # to get ISO 8601 utc_timezone
 ccy # iso-4217 error code
 faker # To make fake data
 rstr # Fake string data

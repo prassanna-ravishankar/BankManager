@@ -1,19 +1,26 @@
-from faker import Faker
-from rstr import xeger
-from faker.providers import BaseProvider
+# system modules
 import random
 import csv
 import os
-import pytz
 import datetime
 from iso4217 import Currency
 from decimal import Decimal
 import json
+
+# Fetched modules for testing
+from faker import Faker
+from rstr import xeger
+from faker.providers import BaseProvider
+import pytz
+
+# My modules
 from transaction import Transaction
+import config
+from currencyrates import CurrencyRateList
 
 # Store currencies in this dict
 # TODO : or not, currently not handling changing currency rates with time
-global_currency_rates = {}
+CURRENCY_LIST = CurrencyRateList()
 
 
 class TransactionProvider(BaseProvider):
@@ -28,14 +35,17 @@ class TransactionProvider(BaseProvider):
     def bank_name(self):
         return self._internal_faker.name().split(' ')[0] + " Bank"
 
-    def timezone(self):
+    def timezone_str(self):
         tzone = pytz.timezone(self._internal_faker.timezone()).localize(
             datetime.datetime.now()
         ).strftime('%z')
-        return "UTC" + tzone[0:3] + ":" + tzone[3:]
+        return tzone[0:3] + ":" + tzone[3:]
+
+    def utc_timezone(self):
+        return "UTC" + self.timezone_str()
 
     def date_str(self):
-        return self._internal_faker.iso8601()
+        return self._internal_faker.iso8601() + self.timezone_str()
 
     def _gen_agnostic_data(self, date=None):
         if date is None:
@@ -46,12 +56,13 @@ class TransactionProvider(BaseProvider):
 
         # Before we go, lets set the rate of that currency
         # if its previously set, do not reset it
-        if currency not in global_currency_rates:
-            if currency is "USD":
-                currency_rate = 1
-            else:
-                currency_rate = Decimal(random.randint(0, 100))
-                global_currency_rates[currency] = str(currency_rate)
+        # CurrencyList handles BaseCurrency modifications
+        currency_rate = random.randint(0, 100)
+        CURRENCY_LIST.add_currency_at_date(
+            currency,
+            currency_rate,
+            date
+        )
 
         return date, amount, currency, category
 
@@ -74,7 +85,7 @@ class TransactionProvider(BaseProvider):
         transaction_id = xeger(general_rule)
         return transaction_id, source_id, dest_id
 
-    def transaction(self, bankid, date=None, pending_transactions={}):
+    def transaction(self, bankid, date=None):
         date, amount, currency, category = self._gen_agnostic_data(date=date)
 
         # Randomly choose the type of the transaction
@@ -141,6 +152,8 @@ def fake_bank_transactions(bank_id=None, filename=None, date=None, logsize=10,
             category, other_bank_id = \
                 transaction_faker.transaction(bank_id, date)
             if other_bank_id:
+                if other_bank_id not in pending_transactions:
+                    pending_transactions[other_bank_id] = []
                 pending_transactions[other_bank_id].append((date, transaction_id,
                                                       source_id, dest_id,
                                                       amount, currency,
@@ -171,14 +184,14 @@ def fake_multibank_transactions(nr_banks=10, entries_per_bank=10,
         writer = csv.writer(f)
         bank_data = [(
             transaction_faker.bank_id(),
-            transaction_faker.timezone(),
+            transaction_faker.utc_timezone(),
             transaction_faker.bank_name()
         )
             for bankidx in range(nr_banks)]
-        pending_transactions = {bankid:[] for bankid, tz, bname in bank_data}
+        pending_transactions = {}
         for bank_code, timezone, bank_name in bank_data:
             # bank_code = transaction_faker.bank_id()
-            # timezone = transaction_faker.timezone()
+            # utc_timezone = transaction_faker.utc_timezone()
             # bank_name = transaction_faker.bank_name()
             for entry_idx in range(entries_per_bank):
                 date = transaction_faker.date_str()
@@ -221,10 +234,8 @@ def fake_multibank_transactions(nr_banks=10, entries_per_bank=10,
                 ]
             )
             pass
-    # By this time a unique set of currency rates will be generated.
-    json.dump(global_currency_rates,
-              open(os.path.join(output_folder, "currency_rates.json"), "w")
-              )
+    CURRENCY_LIST.dump(os.path.join(output_folder,
+                                    "currency_rates.json"))
     pass
 
 
