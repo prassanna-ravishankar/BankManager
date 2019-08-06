@@ -1,4 +1,4 @@
-from basebank import BankAccountID
+from bankmanager.basebank import BankAccountID
 
 
 # Basically a wallet (can easily be blockchainified)

@@ -3,8 +3,8 @@ import dateutil.parser
 from itertools import groupby
 from iso4217 import Currency
 import logging
-from basebank import BankException, BankAccountID
-import config
+from bankmanager.basebank import BankException, BankAccountID
+from bankmanager import config
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +65,8 @@ class Transaction(object):
 
     @property
     def internal(self):
-        return (self._source.bankid ==
-                self._destination.bankid)
+        return (self._source.bankid.bankid ==
+                self._destination.bankid.bankid)
 
     # Helper functions to determine if the transaction is an incoming
     # or an outgoing transaction with Respect to a reference_bank_code
@@ -119,28 +119,41 @@ class Transaction(object):
         return self._date.isoformat()
 
     @property
+    def transaction_timezone(self):
+        return self.transaction_time[-6:]
+
+    @property
     def transaction_amount_nocurrency(self):
         return self._amount
+
+    @property
+    def transaction_date(self):
+        return dateutil.parser.parse(self.transaction_time).date().isoformat()
 
 
 class TransactionList(object):
     """
     Defines a list of transactions, bank specific
     """
-    def __init__(self, bank):
+    def __init__(self, bank, currency_rates=None):
         """
         Starts from an empty transaction list per bank
         Parameters
         ----------
         bank : instance of Bank
             Each transaction list is unique to a bank.
+
+        currency_rates: instance of CurrencyRateList
+            Required to calculate the balance in a unified currency
         """
         self._transactions = []
-        self._transaction_categories = []
+        self._transaction_categories = set()
         self._bank = bank
         self._currencies = []
         self._base_currency = None
         self._amount = None
+        self._dates = set()
+        self._currency_rates = currency_rates
 
     def add_transaction(self, *args, **kwargs):
         """
@@ -152,37 +165,82 @@ class TransactionList(object):
             my_transaction
         )
         self._currencies.append(my_transaction.currency_code)
-        if my_transaction.category not in self._transaction_categories:
-            self._transaction_categories.append(my_transaction.category)
+        self._transaction_categories.add(my_transaction.category)
+        self._dates.add(
+            dateutil.parser.parse(
+                my_transaction.transaction_time
+            ).date().isoformat())
+
+    def append(self, transaction):
+        """
+        different from add_transaction in the sense that it doesn't
+        instantiate a transaction but just appends it onto the list
+        """
+        self._transactions.append(
+            transaction
+        )
+        self._currencies.append(transaction.currency_code)
+        self._transaction_categories.add(transaction.category)
+        self._dates.add(
+            dateutil.parser.parse(
+                transaction.transaction_time
+            ).date().isoformat())
 
     def currencies(self):
         return {key: len(list(group)) for key, group in groupby(self._currencies)}
 
-    def calculate_balance(self, currency_rates):
+    def calculate_balance(self, currency_rates=None):
         """
         Calculates balance in the base currency
         """
+        if currency_rates is None:
+            currency_rates = self._currency_rates
+        assert currency_rates is not None, \
+            "Cannot calculate the balances without date-wise currency rates"
         self._amount = 0
+        incoming_amount = 0
+        incoming_count = 0
+        outgoing_amount = 0
+        outgoing_count = 0
+        internal_count = 0
         for tx in self._transactions:
-            if tx.currency_code is config.BASE_CURRENCY:
+            if tx.currency_code == config.BASE_CURRENCY:
                 rate = 1
             else:
                 rate = currency_rates.currency_rate_at_date(
                     tx.currency_code,
                     tx.transaction_time
                 )
-            assert rate is not None, "We are parsing a currency, " \
-                                     "whose rate is not defined at that time."
+            if rate is None:
+                logger.info("We are parsing a currency, whose"
+                            " rate is not defined at that time. "
+                            "Assuming as if it is USD")
             if tx.internal:
+                internal_count += 1
                 continue
             elif tx.is_outgoing(self.bank.code):
-                self._amount -= tx.transaction_amount_nocurrency * rate
+                # self._amount -= tx.transaction_amount_nocurrency * rate
+                outgoing_amount += tx.transaction_amount_nocurrency * rate
+                outgoing_count += 1
             elif tx.is_incoming(self.bank.code):
-                self._amount += tx.transaction_amount_nocurrency * rate
+                # self._amount += tx.transaction_amount_nocurrency * rate
+                incoming_amount += tx.transaction_amount_nocurrency * rate
+                incoming_count += 1
             else:
-                assert 1==0, "Every transaction has to be internal " \
-                             "or incoming or outgoing"
-        return self._amount
+                assert 1 == 0, "Every transaction has to be internal "\
+                               "or incoming or outgoing"
+        self._amount = incoming_amount - outgoing_amount
+        return (incoming_amount, incoming_count), \
+               (outgoing_amount, outgoing_count), \
+               internal_count
+
+    @property
+    def currency_rates(self):
+        return self._currency_rates
+
+    @property
+    def categories(self):
+        return self._transaction_categories
 
     @property
     def balance(self):
@@ -194,12 +252,35 @@ class TransactionList(object):
     def bank(self):
         return self._bank
 
-    def categorize(self):
-        categorized_transactions = {cat:[] for cat in
-                                    self._transaction_categories}
-        for category in self._transaction_categories:
-            for curr_transaction in self._transactions:
-                if category == curr_transaction.category:
-                    categorized_transactions[category].append(curr_transaction)
+    @property
+    def transactions(self):
+        return self._transactions
 
+    @property
+    def dates(self):
+        return self._dates
+
+    @classmethod
+    def categorize(cls, transaction_list):
+        categorized_transactions = {date: cls(transaction_list.bank,
+                                              transaction_list.currency_rates)
+                                    for date in transaction_list.categories}
+        for curr_transaction in transaction_list.transactions:
+            categorized_transactions[curr_transaction.category].append(
+                curr_transaction
+            )
         return categorized_transactions
+
+    @classmethod
+    def categorize_by_date(cls, transaction_list):
+        categorized_transactions = {date: cls(transaction_list.bank,
+                                              transaction_list.currency_rates)
+                                    for date in transaction_list.dates}
+        for curr_transaction in transaction_list.transactions:
+            categorized_transactions[
+                curr_transaction.transaction_date
+            ].append(curr_transaction)
+        return categorized_transactions
+
+
+

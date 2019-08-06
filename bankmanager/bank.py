@@ -1,8 +1,8 @@
-from basebank import BankZone, BankCode
+from bankmanager.basebank import BankZone, BankCode
 
 
 class Bank(object):
-    def __init__(self, code, timezone, name=""):
+    def __init__(self, code, timezone, name=None):
         """
         Representing a banking entity.
         Parameters
@@ -18,8 +18,19 @@ class Bank(object):
         """
         self._code = BankCode(code)
         self._timezone = BankZone(timezone)
+        if name is None:
+            name = "UNKNOWN"
         self._name = name
 
     @property
     def code(self):
         return self._code
+
+    @property
+    def code_string(self):
+        return self.code.bankid
+
+    @property
+    def name(self):
+        return self._name
+

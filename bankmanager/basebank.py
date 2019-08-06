@@ -1,6 +1,7 @@
 import re
 import logging
 import datetime
+from bankmanager import config
 
 logger = logging.getLogger(__name__) # Make a logger for this class
 
@@ -8,7 +9,7 @@ logger = logging.getLogger(__name__) # Make a logger for this class
 class BankCode(object):
     def __init__(self, bankid):
         assert len(bankid) == 4 # Early reject
-        assert len(re.findall("^[0-9A-F]{4}$", bankid)) == 1  #Some regex to assert the right format
+        assert len(re.findall(config.BANK_ID_RULE, bankid)) == 1  #Some regex to assert the right format
         self._bankid = bankid
 
     @property
